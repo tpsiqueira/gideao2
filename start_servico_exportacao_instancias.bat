@@ -1,0 +1,1 @@
+call python "D:\gideao\exportador.py"

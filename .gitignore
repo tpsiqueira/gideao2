@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__
+*.py[cod]
+*$py.class
+
+# VS Code configuration
+.vscode/
+
+# Log files
+*.log
+
+# Virtual env
+.env
+gid_venv/
+
+# Databases
+gideao_project/db_dev.sqlite3

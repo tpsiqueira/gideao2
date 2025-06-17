@@ -1,0 +1,1328 @@
+﻿{% extends "base.html" %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt">
+{% block head %}
+	{{ block.super }}
+		<style>
+			#TabelaAnalises, #tabela_rotulos {
+				margin-top: 15px;
+				margin-bottom: 15px;
+			}
+		
+			#TabelaAnalises th, #TabelaAnalises td, 
+			#tabela_rotulos th, #tabela_rotulos td {
+				padding: 6px;
+				vertical-align: middle;
+				font-size: 14px;
+			}
+			.loader {
+				width: 50px;
+				padding: 8px;
+				aspect-ratio: 1;
+				border-radius: 50%;
+				background: #ccc;
+				--_m: 
+				  conic-gradient(#0000 10%, #eee),
+				  linear-gradient(#eee 0 0) content-box;
+				-webkit-mask: var(--_m);
+						mask: var(--_m);
+				-webkit-mask-composite: source-out;
+						mask-composite: subtract;
+				animation: l3 1s infinite linear;
+				margin: auto;
+			  }
+			
+			  @keyframes l3 {
+				to { transform: rotate(1turn); }
+			  }
+		</style>
+
+<script type="text/javascript">
+
+var uos=JSON.parse({{uos|safe}});
+var ativos=JSON.parse({{ativos|safe}});
+var ueps=JSON.parse({{ueps|safe}});
+var pocos=JSON.parse({{pocos|safe}});
+var grandezas_industriais=JSON.parse({{grandezas_industriais|safe}});
+var grandezas_especialistas=JSON.parse({{grandezas_especialistas|safe}});
+var relacoes=JSON.parse({{relacoes|safe}});
+var poco_sel=[]
+var ge_sel=[]
+var variaveis_industriais_sel = []
+var unidades_medida_sel = {}
+var data_valores_vi=[] //vetor com valores das vairaveis industriais de input da variavel especialista selecionada
+var data_tempos_vi=[] // vetor com tempos das variaveis industriais de input da variavel especialista selecionada
+var data_status_vi=[]
+var lista_rotulos=[]
+var inicio=[]
+var fim=[]
+var gs=[]
+var analises=[]
+var analise_sel=[]
+var amostras=[]
+var unidades_vi = []
+var sonda_atual = null;
+var servidor_atual = null;
+
+var mapa_etapas = {
+  "/rotulagem_perf": "/perf",
+  "/rotulagem": ""
+}
+
+var etapa_url = mapa_etapas[window.location.pathname] || "";
+
+function substituirClasse() { // Inicializa a página e configura os elementos de seleção
+	if (localStorage.getItem("rot_perf")){
+		const tks = localStorage.getItem("rot_perf").split("/");
+		window.rot_perf = {uo: tks[0], ativo: tks[1], poco: tks[2], inicio: tks[3], fim: tks[4]}	
+	}
+
+	inicializarElementos() // from base.html
+	configurarUOs()
+	configurarAtivos()
+	configurarUEPs()
+	configurarPocos()
+	configurarGEs()
+
+	if (!window.rot_perf || !window.rot_perf.uo){
+		selecionarUO()	
+	}
+
+	if (window.rot_perf && window.rot_perf.poco){
+		const pk = pocos.filter(pc => pc.fields.nome === window.rot_perf.poco)[0]?.pk || null;
+		if (pk !== null){
+			$('#SelecaoPoco').val(pk);
+			selecionarPoco();
+		}
+	}
+
+	// configuração incial dos seletores de tempo
+	var agora = new Date()
+	var ontem = new Date()
+	ontem.setHours(agora.getHours()-24*10)
+	if (window.rot_perf && window.rot_perf.fim){
+		$('#DataFim').val(window.rot_perf.fim)	
+	} else {
+		$('#DataFim').val(formatadorData(agora))	
+	}
+
+	if (window.rot_perf && window.rot_perf.inicio){    
+		$('#DataInicio').val(window.rot_perf.inicio)
+	} else {
+		$('#DataInicio').val(formatadorData(ontem))
+	}
+}
+window.onload = substituirClasse;
+function configurarUOs(){ // Carrega e exibe as opções de UOs no seletor
+	var html=''
+	$('#SelecaoUO').html(html)
+	for (i in uos){
+		html=html+'<option value="'+String(uos[i].pk)+'">'+uos[i].fields.nome+'</option>'
+	}
+	$('#SelecaoUO').html(html)
+	if (window.rot_perf && window.rot_perf.uo){
+	    const pk = uos.filter(uo => uo.fields.nome === window.rot_perf.uo)[0]?.pk || null;
+		if (pk !== null){
+			$('#SelecaoUO').val(pk);
+		}
+  	}
+}
+function configurarAtivos(){ // Atualiza a lista de ativos baseada na UO selecionada
+	var html=''
+	$('#SelecaoAtivo').html(html)
+	for (i in ativos) {
+		if(String(ativos[i].fields.uo)==$('#SelecaoUO').val()){
+			html=html+'<option value='+String(ativos[i].pk)+'>'+ativos[i].fields.nome+'</option>'
+		}
+	}
+	$('#SelecaoAtivo').html(html);
+	if (window.rot_perf && window.rot_perf.ativo){
+		const pk = ativos.filter(at => at.fields.nome === window.rot_perf.ativo)[0]?.pk || null;
+		if (pk !== null){
+			$('#SelecaoAtivo').val(pk);
+		}
+	}
+}
+function configurarUEPs(){ // Atualiza a lista de UEPs baseada no ativo selecionado
+	var html=''
+	$('#SelecaoUEP').html(html)
+
+  if (etapa_url === "/perf"){
+    $('#SelecaoUEP').attr("disabled", true);
+  } else {
+    for (i in ueps) {
+      if(ueps[i].fields.ativo==$('#SelecaoAtivo').val()){
+        html=html+'<option value='+String(ueps[i].pk)+'>'+ueps[i].fields.nome+'</option>'
+      }
+    }
+    $('#SelecaoUEP').html(html)
+  }
+}
+function configurarPocos(){ // Atualiza a lista de poços baseada na UEP selecionada
+	var html=''
+	$('#SelecaoPoco').html(html)
+  if (etapa_url === "/perf"){
+    for (i in pocos) {
+      if(pocos[i].fields.ativo==$('#SelecaoAtivo').val()){
+        html=html+'<option value='+String(pocos[i].pk)+'>'+pocos[i].fields.nome+'</option>'
+      }
+    }
+    $('#SelecaoPoco').html(html);
+  } else {
+    for (i in pocos) {
+      if(pocos[i].fields.uep==$('#SelecaoUEP').val()){
+        html=html+'<option value='+String(pocos[i].pk)+'>'+pocos[i].fields.nome+'</option>'
+      }
+    }
+    $('#SelecaoPoco').html(html)
+  }
+	
+}
+function configurarGEs(){ // Carrega e exibe as grandezas especialistas no seletor
+	var html=''
+	$('#SelecaoGE').html(html)
+	for (i in grandezas_especialistas) {
+		html=html+'<option value='+String(grandezas_especialistas[i].pk)+'>'+grandezas_especialistas[i].fields.nome+'</option>'
+	}
+	$('#SelecaoGE').html(html)
+}
+function selecionarUO(){ // Atualiza listas apresentadas na tela com recursividade a partir da uo selecionada
+	configurarAtivos()
+	selecionarAtivo()
+}
+function selecionarAtivo(){ // Atualiza listas apresentadas na tela com recursividade a partir do ativo selecionado
+	configurarUEPs()
+	selecionarUEP()
+}
+function selecionarUEP(){ // Atualiza listas apresentadas na tela com recursividade a partir da uep selecionada
+	configurarPocos()
+	selecionarPoco()
+}
+function selecionarPoco(){ // Atualiza as variáveis ao mudar o poço
+	if (analise_sel.length <= 0){ // modo de adição
+		for (i in pocos){
+			if(pocos[i].pk==Number($('#SelecaoPoco').val())){
+			poco_sel=pocos[i]
+			}
+		}
+		selecionarGE()
+		gs=[]
+		$('#div_graficos').html('') // limpa os trends
+		lista_rotulos=[]//zera os rotulos
+	}else{ // modo de edição
+		for (i in pocos){
+			if(pocos[i].pk==Number($('#SelecaoPoco').val())){
+			poco_sel=pocos[i]
+			}
+		}
+		selecionarGE()
+		gs=[]
+		$('#div_graficos').html('') // limpa os trends
+	}	
+}
+function selecionarGEOnClick(){ // Seleciona uma grandeza especialista ao clicar
+    for (i in grandezas_especialistas){
+        if(grandezas_especialistas[i].pk == Number($('#SelecaoGE').val())){
+            ge_sel = grandezas_especialistas[i];
+        }
+    }
+
+	adicionarInstancia();
+    entrada = {'poco': String(poco_sel.pk), 'grandeza_especialista': String(ge_sel.pk), 'csrfmiddlewaretoken': '{{ csrf_token }}'};
+
+    $.ajax({
+        type: "POST",
+        datatype: 'json',
+        url: "/ajax" + etapa_url + "/selecionar_ge_amostra_especialista", // Seleciona grandeza especialista e variáveis industriais para um poço via AJAX
+        data: entrada,
+        success: function(saida){
+            if (saida.saida == true){
+                variaveis_industriais_sel = JSON.parse(saida.variaveis_industriais);
+                carregarInstancia();
+                lista_rotulos = []; // Zera os rótulos
+                atualizarTabelaRotulos();
+            } else {        
+                variaveis_industriais_sel = [];            
+                carregarInstancia();
+                lista_rotulos = []; // Zera os rótulos
+                atualizarTabelaRotulos();
+            }
+        }
+    });
+}
+
+function selecionarGE(){ // Seleciona uma grandeza especialista e carrega dados
+    if (analise_sel.length <= 0) { // Modo de adição
+        for (i in grandezas_especialistas) {
+            if (grandezas_especialistas[i].pk == Number($('#SelecaoGE').val())) {
+                ge_sel = grandezas_especialistas[i];
+            }
+        }
+        entrada={'poco':String(poco_sel.pk),'grandeza_especialista':String(ge_sel.pk),'csrfmiddlewaretoken': '{{ csrf_token }}',}
+
+        $.ajax({
+            type: "POST",
+            datatype: 'json',
+            url: "/ajax" + etapa_url + "/selecionar_ge_amostra_especialista", // Seleciona grandeza especialista e variáveis industriais para um poço via AJAX
+            data: entrada,
+            success: function(saida) {
+                if (saida.saida == true) {
+                    variaveis_industriais_sel = JSON.parse(saida.variaveis_industriais);
+                    carregarInstancia();
+                    lista_rotulos = []; // Zera os rótulos
+                    atualizarTabelaRotulos();
+                } else {        
+                    variaveis_industriais_sel = [];
+                    lista_rotulos = []; // Zera os rótulos
+                    atualizarTabelaRotulos();
+                }
+            }
+        });    
+    } else {
+        for (i in grandezas_especialistas) {
+            if (grandezas_especialistas[i].pk == Number($('#SelecaoGE').val())) {
+                ge_sel = grandezas_especialistas[i];
+            }
+        }
+        entrada={'poco':String(poco_sel.pk),'grandeza_especialista':String(ge_sel.pk),'csrfmiddlewaretoken': '{{ csrf_token }}',}
+
+        $.ajax({
+            type: "POST",
+            datatype: 'json',
+            url: "/ajax" + etapa_url + "/selecionar_ge_amostra_especialista", // Seleciona grandeza especialista e variáveis industriais para um poço via AJAX
+            data: entrada,
+            success: function(saida) {
+                if (saida.saida == true) {
+                    variaveis_industriais_sel = JSON.parse(saida.variaveis_industriais);
+                    atualizarTabelaRotulos();
+                } else {        
+                    variaveis_industriais_sel = [];
+                }
+            }
+        });    
+    }
+}
+
+function carregarInstancia(){ // Obtém as instâncias existentes para a grandeza especialista
+	// console.log('entrou em carrega analises')
+	// baseado na ge_sel.pk carrega na variável global analises com a lista de analises para aquela GE e atualiza na tela a lista de analises
+	for (i in grandezas_especialistas){
+		if(grandezas_especialistas[i].pk==Number($('#SelecaoGE').val())){
+		ge_sel=grandezas_especialistas[i]
+		}
+	}
+	entrada={'grandeza_especialista':String(ge_sel.pk),'csrfmiddlewaretoken': '{{ csrf_token }}',}
+	$.ajax({
+		type:"POST",
+		datatype: 'json',
+		url:"/ajax" + etapa_url + "/carregar_instancias_por_ge", // Carrega as instâncias relacionadas a uma grandeza especialista via AJAX
+		data: entrada,
+		success: function(saida){
+			if (saida.saida==true){
+				analises = JSON.parse(saida.analises)
+				atualizarListaInstancias()
+				// toastr.success('Lista de análises para grandeza especialista carregadas com sucesso.')
+			}else{		
+				analises=[]
+				toastr.error('Erro ao carregar lista de análises dessa grandeza especialista.')
+			}
+		}
+	})
+}
+function atualizarListaInstancias(){ // Atualiza a tabela de instâncias na interface
+	var content = '<thead><tr><td>Id</td><td>Poço</td><td>Usuário</td><td>Registro</td><td>Início</td><td>Fim</td><td>Ações</td></tr></thead>';
+	for (i in analises){
+		var poco_sel_local=[]
+		for (j in pocos){
+			if(pocos[j].pk==analises[i].fields.poco){
+				poco_sel_local=pocos[j]
+			}
+		}
+		for (j in usuarios){
+			if(usuarios[j].pk==analises[i].fields.usuario){
+				usuario_sel_local=usuarios[j]
+			}
+		}
+		content = content + 
+    		'<tr>' +
+        		'<td>' + String(analises[i].pk) + '</td>' +
+        		'<td>' + poco_sel_local.fields.nome + '</td>' +
+        		'<td>' + usuario_sel_local.fields.username + '</td>' +
+        		'<td>' + analises[i].fields.data_registro + '</td>' +
+        		'<td>' + analises[i].fields.data_inicio + '</td>' +
+        		'<td>' + analises[i].fields.data_fim + '</td>' +
+        		'<td>' +
+					'<button type="button" class="btn btn-sm btn-primary" style="font-size: 12px; padding: 2px 5px;" title="Exclui a instância" onclick="excluirInstancia(this.querySelector(\'span\'))">' +
+						'<span id="' + String(i) + '" class="glyphicon glyphicon-trash"></span> Excluir' +
+					'</button> ' +	
+					'<button type="button" class="btn btn-sm btn-primary" style="font-size: 12px; padding: 2px 5px;" title="Edita a instância" onclick="editarInstancia(this.querySelector(\'span\'))">' +
+						'<span id="analise_' + String(analises[i].pk) + '" class="glyphicon glyphicon-pencil"></span> Editar' +
+					'</button>' +
+        		'</td>' +
+    		'</tr>';		
+	}
+	$('#TabelaAnalises').html(content)
+}
+function carregarDadosVI(){ // Coleta dados das variáveis industriais selecionadas
+	if (analise_sel.length <= 0){ // modo de adição
+	$.ajax({
+		//async:false,
+		type:"POST",
+		datatype: 'json',
+		url:"/ajax" + etapa_url + "/obter_dados_variaveis_entrada", // Obtém dados de variáveis industriais de entrada via AJAX
+		data:{'poco':String(poco_sel.pk),'grandeza_especialista':String(ge_sel.pk),'inicio':$('#DataInicio').val(),'fim':$('#DataFim').val(),'csrfmiddlewaretoken': '{{ csrf_token }}',},
+		beforeSend: function() {$('#myModal').modal('show')},
+		success: function(saida){
+			$('#label_inicio').html('Início: '+$('#DataInicio').val())
+			$('#label_fim').html('Fim: '+$('#DataFim').val())
+			$('#myModal').modal('hide')
+			variaveis_industriais_sel = JSON.parse(saida.variaveis)
+			unidades_medida_sel = saida.unidades_medida_sel
+      unidades_vi = saida.unidade_valores
+			data_valores_vi=saida.valores
+      sonda_atual = saida.sonda;
+      servidor_atual = saida.servidor;
+			//data_tempos_vi=saida.tempos
+			for (i in saida.tempos){
+				data_tempos_vi[i]=saida.tempos[i].map(function(num){return num.replace('+00:00','')})
+			}
+			/*// console.log('tempos em carregarDadosVI: ', saida.tempos)
+			// console.log('data_tempos_vi: ', data_tempos_vi)*/
+			// console.log('variaveis_industriais_sel', variaveis_industriais_sel)
+			// console.log('unidades_medida_sel', unidades_medida_sel)
+			// console.log('data_valores_vi',data_valores_vi)
+			// console.log('data_tempos_vi: ', data_tempos_vi)
+			data_status_vi=saida.status
+			lista_rotulos=[] // zera os rotulos
+			atualizarTabelaRotulos()
+			renderizarGraficos()
+		}
+	})
+	}else{ //modo de edição
+	$.ajax({
+		//async:false,
+		type:"POST",
+		datatype: 'json',
+		url:"/ajax" + etapa_url + "/obter_dados_variaveis_entrada", // Obtém dados de variáveis industriais de entrada via AJAX
+		data:{'poco':String(poco_sel.pk),'grandeza_especialista':String(ge_sel.pk),'inicio':$('#DataInicio').val(),'fim':$('#DataFim').val(),'csrfmiddlewaretoken': '{{ csrf_token }}',},
+		beforeSend: function() {$('#myModal').modal('show')},
+		success: function(saida){
+			$('#label_inicio').html('Início: '+$('#DataInicio').val())
+			$('#label_fim').html('Fim: '+$('#DataFim').val())			
+			$('#myModal').modal('hide')
+			variaveis_industriais_sel = JSON.parse(saida.variaveis)
+			unidades_medida_sel = saida.unidades_medida_sel
+      unidades_vi = saida.unidade_valores
+			data_valores_vi=saida.valores
+      sonda_atual = saida.sonda;
+      servidor_atual = saida.servidor;
+			
+			for (i in saida.tempos){
+				data_tempos_vi[i]=saida.tempos[i].map(function(num){return num.replace('+00:00','')})
+			}
+			
+			/*// console.log('tempos em carregarDadosVI: ', saida.tempos)
+			// console.log('data_tempos_vi: ', data_tempos_vi)*/
+			// console.log('variaveis_industriais_sel', variaveis_industriais_sel)
+			// console.log('unidades_medida_sel', unidades_medida_sel)
+			// console.log('data_valores_vi',data_valores_vi)
+			// console.log('data_tempos_vi: ', data_tempos_vi)
+			data_status_vi=saida.status
+			renderizarGraficos()
+			atualizarRotulosGraficos()
+		}
+	})
+	}	
+}
+function formatadorData(date){ // Converte uma string de data para o formato adequado
+	return date.getFullYear()+'-'+(((date.getMonth()+1) < 10 ? '0' : '') + (date.getMonth()+1))+'-'+((date.getDate() < 10 ? '0' : '') + date.getDate())+'T'+((date.getHours() < 10 ? '0' : '') + date.getHours())+':'+((date.getMinutes() < 10 ? '0' : '') + date.getMinutes())+':'+((date.getSeconds() < 10 ? '0' : '') + date.getSeconds());
+}
+function formatadorDataString(date){ // Calcula o intervalo da análise selecionada
+	date = new Date(date);
+	return formatadorData(date);
+}
+function formatadorLegenda(data){ // Formata a legenda dos gráficos
+	html = "<b>" + this.getLabels()[1] + "</b>" + ':'
+    if (data.x == null) return html; // no selection
+	return data.series.map(v => "<b>" + v.labelHTML  + "</b>" + ': ' + v.yHTML).join(' ') + ' em ' + data.xHTML;
+}
+function getColorForRotulo(rotulo) {
+    switch(rotulo) {
+        case "NORMAL": return "rgba(0,255,0,0.5)";         // Verde claro
+        case "TRANSIENT": return "rgba(255,255,0,0.5)";     // Amarelo
+        case "STEADY STATE": return "rgba(255,0,0,0.5)";    // Vermelho
+        case "UNKNOWN": return "rgba(245,245,245,0.5)";     // Branco acinzentado
+        default: return "rgba(255,255,255,0.5)";            // Branco
+    }
+}
+function getColorForEstado(estado) {
+    switch(estado) {
+        case "OPEN": return "rgba(0,128,0,0.7)";
+        case "SHUT-IN": return "rgba(128,128,128,0.7)";
+        case "FLUSHING DIESEL": return "rgba(128,0,0,0.7)";
+        case "FLUSHING GAS": return "rgba(128,128,0,0.7)";
+        case "BULLHEADING": return "rgba(0,128,128,0.7)";
+        case "CLOSED WITH DIESEL": return "rgba(192,192,192,0.7)";
+        case "CLOSED WITH GAS": return "rgba(0,255,255,0.7)";
+        case "RESTART": return "rgba(255,0,255,0.7)";
+        case "DEPRESSURIZATION": return "rgba(219,147,112,0.7)";
+        case "UNKNOWN": return "rgba(245,245,245,0.7)";
+        default: return "rgba(255,255,255,0.7)";
+    }
+}
+function renderizarGraficos(){ // Renderiza gráficos das variáveis selecionadas
+	//limpa as divs
+	content='' 
+	trends=[]
+	gs=[]
+	//cria as novas divs
+	for (i in variaveis_industriais_sel){
+		nome_um_vi = variaveis_industriais_sel[i].fields.nome+ " ["+ (unidades_medida_sel[variaveis_industriais_sel[i].fields.um] || unidades_vi[i]) + "]"
+		if(data_status_vi[i]=='Sucesso'){
+			content=content+'<div class="col-md-12"><div id="trend_div_legend'+String(i)+'" style="text-align: left; position: relative; width: 100%; color:black;background-color:white;"></div>'
+			content=content+'<div id="trend_div'+String(i)+'" style="text-align: left; position: relative; width: 100%; height: 200px; color:black;background-color:white;"></div></div>'
+		}else if(data_status_vi[i]=='NoData'){
+			content=content+'<div class="col-md-12"><div id="trend_div_legend'+String(i)+'" style="text-align: left; position: relative; width: 100%; color:black;background-color:white;"><span style="font-weight: bold; color: black;">'+nome_um_vi+'</span>: dados indisponíveis!</div>'
+			content=content+'<div id="trend_div'+String(i)+'" style="text-align: left; position: relative; width: 100%; height: 10px; color:black;background-color:white;"></div></div>'
+		}else if(data_status_vi[i]=='Erro'){
+			content=content+'<div class="col-md-12"><div id="trend_div_legend'+String(i)+'" style="text-align: left; position: relative; width: 100%; color:black;background-color:white;"><span style="font-weight: bold; color: black;">'+nome_um_vi+'</span>: erro na aquisição dos dados!</div>'
+			content=content+'<div id="trend_div'+String(i)+'" style="text-align: left; position: relative; width: 100%; height: 10px; color:black;background-color:white;"></div></div>'
+		}else{
+			content=content+'<div class="col-md-12"><div id="trend_div_legend'+String(i)+'" style="text-align: left; position: relative; width: 100%; color:black;background-color:white;"><span style="font-weight: bold; color: black;">'+nome_um_vi+'</span>: erro desconhecido!</div>'
+			content=content+'<div id="trend_div'+String(i)+'" style="text-align: left; position: relative; width: 100%; height: 10px; color:black;background-color:white;"></div></div>'
+		}
+		trend='date,'+nome_um_vi+'\n'
+		for (j in data_valores_vi[i]){
+			trend=trend+data_tempos_vi[i][j]+','+data_valores_vi[i][j]+'\n'
+		}
+		trends.push(trend)
+	}
+	$('#div_graficos').html(content)
+	// cria os gráficos
+	for (i in variaveis_industriais_sel) {
+		// console.log('Em renderiza graficos tred[i]: ', trends[i])
+		var divAtualLegend="trend_div_legend"+String(i)
+		var divAtual="trend_div"+String(i)
+		if (data_status_vi[i]=='Sucesso'){
+			gs.push(new Dygraph(document.getElementById(divAtual), trends[i], {
+				//labelsUTC: true,
+				legend: 'always',
+				drawPoints: true,
+				color:'black',
+				highlightCircleSize: 5,
+				strokeWidth: 2,
+				drawCallback: function (me,initial){calcula(me, initial)},
+				labelsDiv: divAtualLegend,
+				showRangeSelector: true,
+				legendFormatter: formatadorLegenda,
+				axes: {
+					x: {
+						valueFormatter: formatadorDataString,
+					}
+    			}
+			}))
+		}
+	}
+	if (gs.length>1){
+		var sync = Dygraph.synchronize(gs);
+		sync.detach();
+		sync = Dygraph.synchronize(gs, {
+			zoom: true,
+			selection: true,
+			range:false
+		});
+	}
+}
+function calcula(a, b){
+	var JanelaCorrenteStr=''
+	JanelaCorrente=a.axes_[0].g.dateWindow_
+	if (JanelaCorrente != null){
+		inicio=new Date(JanelaCorrente[0])
+		fim=new Date(JanelaCorrente[1])
+		var inicio_str=formatadorData(inicio)
+		var fim_str=formatadorData(fim)
+		JanelaCorrenteStr=[inicio_str,fim_str]
+		$('#label_inicio').html('Início: '+JanelaCorrenteStr[0])
+		$('#label_fim').html('Fim: '+JanelaCorrenteStr[1])
+		$('#modal_dt_inicio').html(JanelaCorrenteStr[0])
+		$('#modal_dt_fim').html(JanelaCorrenteStr[1])
+	}	
+}
+function adicionarRotulo(){ // Exibe o Pop-up de confirmação para adicionar um rótulo  
+	$('#confirm_add_rotulo').modal('show');
+	if (etapa_url === "/perf"){
+		$('#select_estado_poco').val(null);
+		$('#select_estado_poco').prop('disabled',true);
+	}
+}
+function confirmarAdicionarRotulo(){ // Confirma e adiciona um rótulo à instância
+// atualiza lista de rotulos - variavel global
+	// console.log('***** confirmacao add rotulo ***')
+	// console.log('lista rotulos inicio', lista_rotulos)
+	select_rotulo_intervalo = $('#select_rotulo_intervalo').val()
+	select_estado_poco = $('#select_estado_poco').val()
+
+	// Testes de sanidade:
+	sanidade=true
+	// 1) Apenas análise Exploration pode ser rotulada como UNKNOWN/UNKNOWN
+	if (ge_sel.fields.nome != "Exploration" && (select_rotulo_intervalo == 'UNKNOWN' || select_estado_poco == 'UNKNOWN')){
+		toastr.error('Apenas análise da grandeza "Exploration" pode ter amostra com "Rótulo de evento = UNKNOWN" e/ou "Estado de poço = UNKNOWN".')
+		// console.log('Apenas análise da grandeza "Exploration" pode ter amostra com "Rótulo de evento = UNKNOWN" e/ou "Estado de poço = UNKNOWN".')
+		sanidade=false
+	}
+	// 2) Análise Exploration só pode ser rotulada como UNKNOWN/UNKNOWN
+	if (ge_sel.fields.nome == "Exploration" && (select_rotulo_intervalo != 'UNKNOWN' || select_estado_poco != 'UNKNOWN')){
+		toastr.error('Análise da grandeza "Exploration" só pode ter amostra com "Rótulo de evento = UNKNOWN" e "Estado de poço = UNKNOWN".')
+		// console.log('Análise da grandeza "Exploration" só pode ter amostra com "Rótulo de evento = UNKNOWN" e "Estado de poço = UNKNOWN".')
+		sanidade=false
+	}
+	// 3) Análise Exploration só pode ter 1 amostra
+	if (ge_sel.fields.nome == "Exploration" && lista_rotulos.length>0){
+		$('#confirm_add_rotulo').modal('hide')
+		toastr.error('Análise da grandeza "Exploration" só pode ter 1 amostra e já existe 1 cadastrada.')
+		// console.log('Análise da grandeza "Exploration" só pode ter 1 amostra e já existe 1 cadastrada.')
+		sanidade=false		
+	}
+	// 4) Amostra só pode ser adicionada à direita (mais recente que as demais) ou à esquerda (menos recente que as demais)
+	if (lista_rotulos.length>0){
+		inicio_instancia = inicio
+		fim_instancia = fim
+		inicio_amostras_criadas = new Date() 	// Referente a agora (necessariamente haverá alguma amostra com inicio < agora)
+		fim_amostras_criadas = new Date()
+		fim_amostras_criadas.setTime(0)			// Referente a 1970 (necessariamente haverá alguma amostra com fim > 1970)
+		for (i in lista_rotulos){
+			if ( lista_rotulos[i].inicio < inicio_instancia){
+				inicio_instancia = lista_rotulos[i].inicio
+			}
+			if (lista_rotulos[i].fim > fim_instancia){
+				fim_instancia = lista_rotulos[i].fim
+			}
+			if (lista_rotulos[i].inicio < inicio_amostras_criadas){
+				inicio_amostras_criadas = lista_rotulos[i].inicio
+			}
+			if (lista_rotulos[i].fim > fim_amostras_criadas){
+				fim_amostras_criadas = lista_rotulos[i].fim
+			}
+		}
+		// Se interna a todas as outras amostras OU externa a todas as outras amostras
+		if ((inicio_instancia != inicio && fim_instancia != fim) || (inicio_instancia == inicio && fim_instancia == fim)){
+			$('#confirm_add_rotulo').modal('hide')	
+			toastr.error('Amostra só pode ser adicionada à direita (mais recente que as demais) ou à esquerda (menos recente que as demais).')
+			// console.log('Amostra só pode ser adicionada à direita (mais recente que as demais) ou à esquerda (menos recente que as demais).')
+			sanidade=false
+		}
+	}
+	// Verifica se passou em todos os testes de sanidade
+	if (sanidade == true){
+		// Ajusta inicio ou fim da amostra
+		if (lista_rotulos.length>0){
+			if (fim_instancia == fim){
+				// Ajusta inicio da amostra sendo adicionada (elimina gap = período sem rotulagem)
+				inicio.setTime(fim_amostras_criadas.getTime() + 1000)
+				// console.log('Início de amostra ajustado para:', inicio)
+			} else{
+				// Ajusta fim da amostra sendo adicionada (elimina gap = período sem rotulagem)
+				fim.setTime(inicio_amostras_criadas.getTime() - 1000)
+				// console.log('Fim de amostra ajustado para:', fim)
+			}
+		}
+		var aux=[]
+		aux.inicio=inicio
+		aux.fim=fim
+		aux.rotulo=select_rotulo_intervalo
+		aux.estado_poco=select_estado_poco
+		lista_rotulos.push(aux)
+		// atualiza tabela
+		atualizarTabelaRotulos()
+		// atualiza trends
+		atualizarRotulosGraficos()
+		$('#confirm_add_rotulo').modal('hide')	
+		toastr.success('Amostra rotulada com sucesso.')
+	}
+	// console.log('lista rotulos fim', lista_rotulos)
+}
+function adicionarAmostra(){ // Exibe o pop-up de confirmação para adicionar uma amostra
+	if (analise_sel.length <= 0){ // modo de adição de analise
+		$('#confirm_add_amostra').modal('show')	} 
+	else {
+		$('#confirm_add_amostra').modal('show')
+		//toastr.warning('Análises não podem ser editadas, apenas excluídas e adicionadas novas.')
+	}
+}
+function confirmarAdicionarAmostra(){ // Confirma e adiciona uma amostra ao conjunto de dados
+	if (analise_sel.length <= 0){ // modo de adição de analise
+		// Testes de sanidade:
+		var n_evento=0
+		var n_normal=0
+		var n_transiente=0
+		var n_unknown=0
+		var inicio_normal=[]
+		var inicio_transiente=[]
+		var inicio_evento=[]
+
+		inicio_instancia = new Date() 	// Referente a agora (necessariamente haverá alguma amostra com inicio < agora)
+		fim_instancia = new Date()
+		fim_instancia.setTime(0)		// Referente a 1970 (necessariamente haverá alguma amostra com fim > 1970)
+		periodo_total_amostras = 0
+		for (i in lista_rotulos){		
+			if (lista_rotulos[i].rotulo=='NORMAL'){
+				if (n_normal == 0 || lista_rotulos[i].inicio < inicio_normal){
+					inicio_normal = lista_rotulos[i].inicio
+				}
+				n_normal = n_normal + 1
+			}else if (lista_rotulos[i].rotulo=='TRANSIENT'){
+				if (n_transiente == 0 || lista_rotulos[i].inicio < inicio_transiente){
+					inicio_transiente = lista_rotulos[i].inicio
+				}
+				n_transiente = n_transiente + 1
+			}				
+			else if (lista_rotulos[i].rotulo=='STEADY STATE'){
+				if (n_evento == 0 || lista_rotulos[i].inicio < inicio_evento){
+					inicio_evento = lista_rotulos[i].inicio
+				}
+				n_evento = n_evento + 1
+			}
+			else if (lista_rotulos[i].rotulo=='UNKNOWN'){
+				n_unknown = n_unknown + 1
+			}
+			if ( lista_rotulos[i].inicio < inicio_instancia){
+				inicio_instancia = lista_rotulos[i].inicio
+			}
+			if (lista_rotulos[i].fim > fim_instancia){
+				fim_instancia = lista_rotulos[i].fim
+			}
+			periodo_total_amostras = periodo_total_amostras + (lista_rotulos[i].fim - lista_rotulos[i].inicio)
+			// console.log('lista_rotulos[i].inicio:', lista_rotulos[i].inicio)
+			// console.log('lista_rotulos[i].fim:', lista_rotulos[i].fim)
+		}
+		periodo_analise = fim_instancia - inicio_instancia
+		// console.log('periodo_analise:', periodo_analise)
+		// console.log('periodo_total_amostras:', periodo_total_amostras)
+		periodo_total_amostras = periodo_total_amostras + 1000*(lista_rotulos.length - 1) // Adiciona 1 segundo entre cada par de amostras
+		// console.log('periodo_total_amostras (corrigido):', periodo_total_amostras)		
+		// 1) Não se pode ter nenhuma amostra evento antes de amostra normal
+		if (n_normal > 0 && n_evento > 0 && inicio_evento < inicio_normal){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostra steady state antes de amostra normal.')
+			// console.log('Instância não pode ter amostra steady state antes de amostra normal.')
+		// 2) Não se pode ter amostra evento antes de transiente
+		}else if(n_transiente > 0 && n_evento > 0 && inicio_evento < inicio_transiente){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostra steady state antes de amostra transient.')
+			// console.log('Instância não pode ter amostra steady state antes de amostra transient.')
+		// 3) Não se pode ter amostra normal imediatamente antes de evento (não ter transiente)			
+		}else if(n_transiente == 0 && n_normal > 0 && n_evento > 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostras normal e steady state e não ter amostra transient.')
+			// console.log('Instância não pode ter amostras normal e steady state e não ter amostra transient.')
+		// 4) Não se pode ter mais de uma amostra evento
+		}else if(n_evento > 1){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter mais do que 1 amostra steady state.')
+			// console.log('Instância não pode ter mais do que 1 amostra steady state.')
+		// 5) Não se pode ter apenas amostra transiente (sem normal e/ou evento)
+		}else if(n_transiente > 0 && n_normal == 0 && n_evento == 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter apenas amostra transient (sem amostras normal e steady state).')
+			// console.log('Instância não pode ter amostra transient (sem amostras normal e steady state).')
+		// 6) Não se pode ter amostras separadas entre si
+		}else if(periodo_total_amostras < periodo_analise){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Não se pode ter amostras separadas entre si (gap entre amostras).')
+			// console.log('Não se pode ter amostras separadas entre si (gap entre amostras).')
+		// 7) Não se pode adicionar instância sem ao menos uma amostra
+		}else if((n_evento + n_normal + n_transiente + n_unknown) == 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância precisa ter ao menos uma amostra.')
+			// console.log('Instância precisa ter ao menos uma amostra.')
+		}else{
+			var rotulos_vector=[]
+			var estados_poco_vector=[]
+			var inicios_vector=[]
+			var fins_vector=[]
+			for (i in lista_rotulos){
+				rotulos_vector.push(lista_rotulos[i].rotulo)
+				estados_poco_vector.push(lista_rotulos[i].estado_poco)
+				inicios_vector.push(formatadorData(lista_rotulos[i].inicio))
+				fins_vector.push(formatadorData(lista_rotulos[i].fim))
+			}
+			// console.log('valor da data inicio', $('#DataInicio').val(),'-',document.getElementById("DataInicio").value)
+			entrada={
+        'inicio':$('#DataInicio').val(),
+        'fim':$('#DataFim').val(),
+        'poco':String(poco_sel.pk),
+        'grandeza_especialista':String(ge_sel.pk),
+        'rotulos[]':rotulos_vector,
+        'estados_poco[]':estados_poco_vector,
+        'inicios[]':inicios_vector,
+        'fins[]':fins_vector,
+        'csrfmiddlewaretoken': '{{ csrf_token }}',
+        'sonda': sonda_atual,
+        'servidor': servidor_atual      
+      }
+			$.ajax({
+				type:"POST",
+				datatype: 'json',
+				url:"/ajax" + etapa_url + "/adicionar_instancia_amostras_especialista", // Adiciona uma instância com amostras e rótulos via AJAX
+				data: entrada,
+				success: function(saida){
+					if (saida.status==true){
+						lista_rotulos=[] // zera lista de rotulos selecionados
+						analise_sel=[] // zera variavel global de analise selecionada
+						selecionarGE()
+						toastr.success('Instância salva com sucesso.')
+					}else{		
+						toastr.error('Erro ao salvar instância.')
+					}
+				}
+			})
+			$('#confirm_add_amostra').modal('hide')	
+		}
+	} else{ //modo de edição de análise
+		// console.log('Lista de rotulos: ', lista_rotulos)
+		$('#confirm_add_amostra').modal('hide')	
+		// Testes de sanidade:
+		var n_evento=0
+		var n_normal=0
+		var n_transiente=0
+		var inicio_normal=[]
+		var inicio_transiente=[]
+		var inicio_evento=[]
+
+		inicio_instancia = new Date() 	// Referente a agora (necessariamente haverá alguma amostra com inicio < agora)
+		fim_instancia = new Date()
+		fim_instancia.setTime(0)		// Referente a 1970 (necessariamente haverá alguma amostra com fim > 1970)
+		periodo_total_amostras = 0
+		for (i in lista_rotulos){		
+			if (lista_rotulos[i].rotulo=='NORMAL'){
+				if (n_normal == 0 || lista_rotulos[i].inicio < inicio_normal){
+					inicio_normal = lista_rotulos[i].inicio
+				}
+				n_normal = n_normal + 1
+			}else if (lista_rotulos[i].rotulo=='TRANSIENT'){
+				if (n_transiente == 0 || lista_rotulos[i].inicio < inicio_transiente){
+					inicio_transiente = lista_rotulos[i].inicio
+				}
+				n_transiente = n_transiente + 1
+			}				
+			else if (lista_rotulos[i].rotulo=='STEADY STATE'){
+				if (n_evento == 0 || lista_rotulos[i].inicio < inicio_evento){
+					inicio_evento = lista_rotulos[i].inicio
+				}
+				n_evento = n_evento + 1
+			}
+			else if (lista_rotulos[i].rotulo=='UNKNOWN'){
+				n_unknown = n_unknown + 1
+			}			
+			if ( lista_rotulos[i].inicio < inicio_instancia){
+				inicio_instancia = lista_rotulos[i].inicio
+			}
+			if (lista_rotulos[i].fim > fim_instancia){
+				fim_instancia = lista_rotulos[i].fim
+			}
+			periodo_total_amostras = periodo_total_amostras + (lista_rotulos[i].fim - lista_rotulos[i].inicio)
+			// console.log('lista_rotulos[i].inicio:', lista_rotulos[i].inicio)
+			// console.log('lista_rotulos[i].fim:', lista_rotulos[i].fim)
+		}
+		periodo_analise = fim_instancia - inicio_instancia
+		// console.log('periodo_analise:', periodo_analise)
+		// console.log('periodo_total_amostras:', periodo_total_amostras)
+		periodo_total_amostras = periodo_total_amostras + 1000*(lista_rotulos.length - 1) // Adiciona 1 segundo entre cada par de amostras
+		// console.log('periodo_total_amostras (corrigido):', periodo_total_amostras)		
+		// 1) Não se pode ter nenhuma amostra evento antes de amostra normal
+		if (n_normal > 0 && n_evento > 0 && inicio_evento < inicio_normal){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostra steady state antes de amostra normal.')
+			// console.log('Instância não pode ter amostra steady state antes de amostra normal.')
+		// 2) Não se pode ter amostra evento antes de transiente
+		}else if(n_transiente > 0 && n_evento > 0 && inicio_evento < inicio_transiente){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostra steady state antes de amostra transient.')
+			// console.log('Instância não pode ter amostra steady state antes de amostra transient.')
+		// 3) Não se pode ter amostra normal imediatamente antes de evento (não ter transiente)			
+		}else if(n_transiente == 0 && n_normal > 0 && n_evento > 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter amostras normal e steady state e não ter amostra transient.')
+			// console.log('Instância não pode ter amostras normal e steady state e não ter amostra transient.')
+		// 4) Não se pode ter mais de uma amostra evento
+		}else if(n_evento > 1){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter mais do que 1 amostra steady state.')
+			// console.log('Instância não pode ter mais do que 1 amostra steady state.')
+		// 5) Não se pode ter apenas amostra transiente (sem normal e/ou evento)
+		}else if(n_transiente > 0 && n_normal == 0 && n_evento == 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância não pode ter apenas amostra transient (sem amostras normal e steady state).')
+			// console.log('Instância não pode ter amostra transient (sem amostras normal e steady state).')
+		// 6) Não se pode ter amostras separadas entre si
+		}else if(periodo_total_amostras < periodo_analise){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Não se pode ter amostras separadas entre si (gap entre amostras).')
+			// console.log('Não se pode ter amostras separadas entre si (gap entre amostras).')			
+		// 7) Não se pode adicionar instância sem ao menos uma amostra
+		}else if((n_evento + n_normal + n_transiente + n_unknown) == 0){
+			$('#confirm_add_amostra').modal('hide')
+			toastr.error('Instância precisa ter ao menos uma amostra.')
+			// console.log('Instância precisa ter ao menos uma amostra.')
+		}else{
+			var rotulos_vector=[]
+			var estados_poco_vector=[]
+			var inicios_vector=[]
+			var fins_vector=[]
+			for (i in lista_rotulos){
+				rotulos_vector.push(lista_rotulos[i].rotulo)
+				estados_poco_vector.push(lista_rotulos[i].estado_poco)
+				inicios_vector.push(formatadorData(lista_rotulos[i].inicio))
+				fins_vector.push(formatadorData(lista_rotulos[i].fim))				
+			}
+			// console.log('valor da data inicio', $('#DataInicio').val(),'-',document.getElementById("DataInicio").value)
+			entrada={'inicio':$('#DataInicio').val(),'fim':$('#DataFim').val(),'poco':String(poco_sel.pk),'grandeza_especialista':String(ge_sel.pk),'rotulos[]':rotulos_vector,'estados_poco[]':estados_poco_vector,'inicios[]':inicios_vector,'fins[]':fins_vector,'csrfmiddlewaretoken': '{{ csrf_token }}','analise_sel[]':String(analise_sel.pk)}
+			$.ajax({
+				type:"POST",
+				datatype: 'json',
+				url:"/ajax" + etapa_url + "/editar_instancia_amostras_especialista", // Edita uma intância e suas amostras existentes via AJAX
+				data: entrada,
+				success: function(saida){
+					if (saida.status==true){
+						lista_rotulos=[] // zera lista de rotulos selecionados
+						analise_sel=[] // zera variavel global de analise selecionada
+						selecionarGE()
+						toastr.success('Instância salva com sucesso.')
+					}else{		
+						toastr.error('Erro ao salvar instância.')
+					}
+				}
+			})
+			$('#confirm_add_amostra').modal('hide')	
+		}
+	}
+}
+function atualizarRotulosGraficos() {
+    for (let i in gs) {
+        let grafico = gs[i];
+        grafico.updateOptions({
+            underlayCallback: function (canvas, area, me) {
+                for (let j in lista_rotulos) {
+                    let bottom_left = me.toDomCoords(lista_rotulos[j].inicio, Math.min(...data_valores_vi[i]));
+                    let top_right = me.toDomCoords(lista_rotulos[j].fim, Math.max(...data_valores_vi[i]));
+                    let left = bottom_left[0];
+                    let right = top_right[0];
+
+                    // Dimensões separadas
+                    let top_start = area.y;
+                    let top_height = area.h / 2;
+                    let bottom_start = area.y + area.h / 2;
+                    let bottom_height = area.h / 2;
+
+                    // Camada 1: Estado do poço (parte superior)
+                    canvas.fillStyle = getColorForEstado(lista_rotulos[j].estado_poco);
+                    canvas.fillRect(left, top_start, right - left, top_height);
+
+                    // Camada 2: Rótulo de evento (parte inferior)
+                    canvas.fillStyle = getColorForRotulo(lista_rotulos[j].rotulo);
+                    canvas.fillRect(left, bottom_start, right - left, bottom_height);
+                }
+            }
+        });
+    }
+}
+function atualizarTabelaRotulos(){ // Atualiza a tabela de rótulos com os novos dados
+	let content = "";
+	if (etapa_url === "/perf"){
+		content = '<thead><tr><td>Início</td><td>Fim</td><td>Rótulo de evento</td><td>Ações</td></tr></thead>';
+		for (i in lista_rotulos){
+			content = content + 
+				'<tr>' + 
+					'<td>' + formatadorData(lista_rotulos[i].inicio)+'</td>' + 
+					'<td>' + formatadorData(lista_rotulos[i].fim)+'</td>' + 
+					'<td>' + lista_rotulos[i].rotulo+'</td>' + 
+					'<td>' +
+						'<button type="button" class="btn btn-sm btn-primary" style="font-size: 12px; padding: 2px 5px;" title="Exclui a amostra" onclick="excluirRotulo(this.querySelector(\'span\'))">' +
+							'<span id="' + String(i) + '" class="glyphicon glyphicon-trash"></span> Excluir' +
+						'</button>' +
+					'</td>' +
+				'</tr>';
+		}
+	} else {
+		content = '<thead><tr><td>Início</td><td>Fim</td><td>Rótulo de evento</td><td>Estado de poço</td><td>Ações</td></tr></thead>';
+		for (i in lista_rotulos){
+			content = content + 
+				'<tr>' +
+					'<td>' + formatadorData(lista_rotulos[i].inicio) + '</td>' +
+					'<td>' + formatadorData(lista_rotulos[i].fim) + '</td>' +
+					'<td>' + lista_rotulos[i].rotulo + '</td>' +
+					'<td>' + lista_rotulos[i].estado_poco + '</td>' +
+					'<td>' +
+						'<button type="button" class="btn btn-sm btn-primary" style="font-size: 12px; padding: 2px 5px;" title="Exclui a amostra" onclick="excluirRotulo(this.querySelector(\'span\'))">' +
+							'<span id="' + String(i) + '" class="glyphicon glyphicon-trash"></span> Excluir' +
+						'</button>' +
+					'</td>' +
+				'</tr>';		
+		}
+	}
+	$('#tabela_rotulos').html(content)
+}
+function excluirRotulo(a){ // Remove um rótulo da análise
+	// console.log('****************')
+	// console.log('rotulos antigos:', lista_rotulos)
+	lista_rotulos.splice(Number(a.id),1)
+	atualizarTabelaRotulos()
+	atualizarRotulosGraficos()
+	// console.log('rotulos novos:', lista_rotulos)
+}
+function exibirParametrizacao(){ // Alterna a exibição do painel de parametrização
+if($('#PainelParametrizacao').css('display') == 'none'){ 
+   $('#PainelParametrizacao').show('slow');
+   //<span id='BotaoMostrarOcultarTabela' class="glyphicon glyphicon-chevron-down" ></span></button>
+   $('#BotaoMostrarOcultarTabela').removeClass('glyphicon-chevron-down')
+   $('#BotaoMostrarOcultarTabela').addClass('glyphicon-chevron-up')
+   
+} else { 
+   $('#PainelParametrizacao').hide('slow');
+   $('#BotaoMostrarOcultarTabela').removeClass('glyphicon-chevron-up')
+   $('#BotaoMostrarOcultarTabela').addClass('glyphicon-chevron-down')
+}
+}
+function exibirAnalises(){ // Alterna a exibição do painel de análises
+if($('#PainelAnalises').css('display') == 'none'){ 
+   $('#PainelAnalises').show('slow');
+   $('#BotaoMostrarOcultarAnalises').removeClass('glyphicon-chevron-down')
+   $('#BotaoMostrarOcultarAnalises').addClass('glyphicon-chevron-up')
+   
+} else { 
+   $('#PainelAnalises').hide('slow');
+   $('#BotaoMostrarOcultarAnalises').removeClass('glyphicon-chevron-up')
+   $('#BotaoMostrarOcultarAnalises').addClass('glyphicon-chevron-down')
+}
+}	
+function editarInstancia(a){
+	selecionarInstancia(a)
+	apresentarInstancia()
+}
+
+function selecionarInstancia(a){ // Seleciona uma instância
+	var linha_sel=$($($(a).parent()).parent()).parent()[0]
+	for (i in analises){
+		if (String(analises[i].pk)==$($(linha_sel).children()[0]).html()){
+		analise_sel=analises[i]
+		}
+	}
+	// Atualiza a cor da análise selecionada
+	$('#TabelaAnalises').find('> tbody > tr').css('background-color','white')
+	$(linha_sel).css('background-color','rgb(80,113,160,0.59)')	
+}
+function apresentarInstancia(){ // Apresenta a instância selecionada
+	if (etapa_url === "/perf"){
+		// Carrega poco, ativo e uo a partir da instancia selecionada
+		for (i in pocos){
+			if(pocos[i].pk==analise_sel.fields.poco){
+			poco_sel_local=pocos[i]
+			}
+		}
+
+		for (i in ativos){
+			if(poco_sel_local.fields.ativo==ativos[i].pk){
+			ativo_sel_local=ativos[i]
+			}
+		}
+
+		for (i in uos){
+			if(ativo_sel_local.fields.uo==uos[i].pk){
+			uo_sel_local=uos[i]
+			}
+		}
+
+	} else {
+		// Carrega poco, uep, ativo e uo a partir da instancia selecionada
+		for (i in pocos){
+			if(pocos[i].pk==analise_sel.fields.poco){
+			poco_sel_local=pocos[i]
+			}
+			}
+		for (i in ueps){
+			if(poco_sel_local.fields.uep==ueps[i].pk){
+			uep_sel_local=ueps[i]
+			}
+		}
+		for (i in ativos){
+			if(uep_sel_local.fields.ativo==ativos[i].pk){
+			ativo_sel_local=ativos[i]
+			}
+		}
+		for (i in uos){
+			if(ativo_sel_local.fields.uo==uos[i].pk){
+			uo_sel_local=uos[i]
+			}
+		}		
+	}
+	
+	// Atualiza apresentações de uo, ativo, uep (no cado /perf) e poco
+	$('#SelecaoUO').val(String(uo_sel_local.pk))
+	selecionarUO()
+	$('#SelecaoAtivo').val(String(ativo_sel_local.pk))
+	selecionarAtivo()
+    if (etapa_url !== "/perf"){
+		$('#SelecaoUEP').val(String(uep_sel_local.pk))
+		selecionarUEP()  
+    }
+	$('#SelecaoPoco').val(String(poco_sel_local.pk))
+	selecionarPoco()
+
+	// Atualiza apresentações de datas
+	$('#DataInicio').val(analise_sel.fields.data_inicio.substring(0,19))
+	$('#DataFim').val(analise_sel.fields.data_fim.substring(0,19))
+	
+	// Carrega e apresenta a tabela de amostras rotuladas da análise selecionada e 
+	// os gráficos das variáveis industriais referentes às grandezas industriais 
+	// associadas à gradeza especialista selecionada
+	entrada={'analise':String(analise_sel.pk),'csrfmiddlewaretoken': '{{ csrf_token }}',}
+	$.ajax({
+		type:"POST",
+		datatype: 'json',
+		url:"/ajax" + etapa_url + "/carregar_amostras_por_analise", 
+		data: entrada,
+		success: function(saida){
+			if (saida.saida==true){
+				amostras =JSON.parse(saida.amostras)
+				lista_rotulos=[]					
+				for (i in amostras){
+					aux=[]
+					aux.inicio=new Date(amostras[i].fields.inicio.substring(0,19))
+					aux.fim=new Date(amostras[i].fields.fim.substring(0,19))
+					aux.rotulo=amostras[i].fields.tipo
+					aux.estado_poco=amostras[i].fields.estado_poco
+					lista_rotulos.push(aux)
+					//toastr.success('Amostras carregadas com sucesso.')
+				}
+				atualizarTabelaRotulos()
+				carregarDadosVI()
+				//renderizarGraficos()
+				// toastr.success('Grandeza selecionada com sucesso.')
+			}else{		
+				renderizarGraficos()
+				atualizarTabelaRotulos()
+				//toastr.error('Erro ao selecionar a grandeza para esse poços, verifique se ela foi cadastrada.')
+			}
+		}
+	})
+}
+function adicionarInstancia(){ // Adiciona uma nova instância
+	lista_rotulos=[] // zera lista de rotulos selecionados
+	analise_sel=[] // zera variavel global de analise selecionada
+	$('#TabelaAnalises').find('> tbody > tr').css('background-color','white') // retira o highligth da tabela de analises
+	atualizarTabelaRotulos()
+	carregarDadosVI()
+}
+function excluirInstancia(a){ // Exibe o popup para confirmar a exclusão de uma instância
+	selecionarInstancia(a)
+	$('#confirm_exclusao_analise').modal('show')	
+}
+function confirmaExclusaoInstancia(){ // Confirma e remove a instância selecionada
+	// console.log(analise_sel)
+	//exclui no banco
+	entrada={'pk':analise_sel.pk ,'csrfmiddlewaretoken': '{{ csrf_token }}',}
+	$.ajax({
+		type:"POST",
+		async:false,
+		datatype: 'json',
+		url:"/ajax" + etapa_url + "/excluir_instancia_por_id", // Exclui uma análise específica com base no ID via AJAX
+		data: entrada,
+		success: function(saida){
+			if (saida.saida == true){
+				// console.log(saida)
+				// atualiza pagina para a grandeza selecionada
+				lista_rotulos=[] // zera lista de rotulos selecionados
+				analise_sel=[] // zera variavel global de analise selecionada
+				selecionarGE()
+				// fecha modal de exclusao
+				$('#confirm_exclusao_analise').modal('hide')
+				toastr.success('Instância excluída com sucesso.')
+			}
+			else {
+				toastr.error('Erro ao excluir instância.')
+			}
+		}
+	})
+}
+
+</script>
+<!-- POPUPS DE AVISOS -->
+
+<div class="modal" id="myModal" tabindex="-1" style="display:none;" data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog" style="display: flex; justify-content: center; align-items: center; height: 100%;">
+	  <div class="loader" style="width: 60px; aspect-ratio: 1; border-radius: 50%; background: #ccc;
+		--_m: conic-gradient(#0000 10%, #eee), linear-gradient(#eee 0 0) content-box;
+		-webkit-mask: var(--_m); mask: var(--_m);
+		-webkit-mask-composite: source-out; mask-composite: subtract;
+		animation: l3 1s infinite linear;"></div>
+	</div>
+  </div>  
+  <style>
+	@keyframes l3 {
+	  to { transform: rotate(1turn); }
+	}
+  </style>  
+<div class="modal" id="confirm_add_rotulo" tabindex="-1"  style="display:none;"  data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h4 class="modal-title" id="modal_titulo_confirm_1">Rotular a amostra?</h4>
+			</div>
+			<div class="modal-body">
+				<h5><strong>Intervalo</strong></h5>
+				<h5>🕒 Início: <span id="modal_dt_inicio"></span></h5>
+				<h5>⏳ Fim: <span id="modal_dt_fim"></span></h5>
+				<h5>🏷️ Rótulo de evento</h5>
+				<select id="select_rotulo_intervalo" class="form-control"><option>NORMAL</option><option>TRANSIENT</option><option>STEADY STATE</option><option>UNKNOWN</option></select>
+				<h5>🛢️ Estado de poço</h5>
+				<select id="select_estado_poco" class="form-control"><option>OPEN</option><option>SHUT-IN</option><option>FLUSHING DIESEL</option><option>FLUSHING GAS</option><option>BULLHEADING</option><option>CLOSED WITH DIESEL</option><option>CLOSED WITH GAS</option><option>RESTART</option><option>DEPRESSURIZATION</option><option>UNKNOWN</option></select>
+			</div>
+			<div class="modal-footer">
+				<button class="btn btn-primary" id="button_confirm_add_rotulo" onclick="confirmarAdicionarRotulo()" title="Confirma a adição de um rótulo à amostra">
+					<span class="glyphicon glyphicon-ok"></span> Sim
+				</button>				
+				<button onclick="cancelarAdicionarRotulo()" class="btn btn-danger" title="Cancela a adição do rótulo à amostra">
+					<span class="glyphicon glyphicon-remove"></span> Cancelar
+				</button>				
+					<script>function cancelarAdicionarRotulo() {$('#confirm_add_rotulo').modal('hide')} </script>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="modal" id="confirm_exclusao_analise" tabindex="-1"  style="display:none;"  data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h4 class="modal-title" id="modal_titulo_confirm_2">Excluir a instância?</h4>
+			</div>
+			<div class="modal-body">
+			</div>
+			<div class="modal-footer">
+				<button class="btn btn-primary" id="button_confirm_delete" onclick="confirmaExclusaoInstancia()" title="Confirma a exclusão de uma instância">
+					<span class="glyphicon glyphicon-ok"></span> Sim
+				</button>
+				<button onclick="cancelarExclusaoInstancia()" class="btn btn-danger" title="Cancela a exclusão de uma instância">
+					<span class="glyphicon glyphicon-remove"></span> Cancelar
+				</button>				
+					<script>function cancelarExclusaoInstancia() {$('#confirm_exclusao_analise').modal('hide')} </script>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="modal" id="confirm_add_amostra" tabindex="-1"  style="display:none;"  data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h4 class="modal-title" id="modal_titulo_confirm_2">Salvar a instância?</h4>
+			</div>
+			<div class="modal-footer">
+				<button class="btn btn-primary" id="button_confirm_delete" onclick="confirmarAdicionarAmostra()" title="Confirma o salvamento de uma instância">
+					<span class="glyphicon glyphicon-ok"></span> Sim
+				</button>
+				<button onclick="cancelarAdicionarAmostra()" class="btn btn-danger" title="Cancela o salvamento de uma instância">
+					<span class="glyphicon glyphicon-remove"></span> Cancelar
+				</button>
+					<script>function cancelarAdicionarAmostra() {$('#confirm_add_amostra').modal('hide')} </script>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="panel panel-positive col-md-12" > 
+	<div id= "Painel" class="panel-heading panel-primary">		
+		<h3>Instâncias Rotuladas
+		<button type='button' id='exibirAnalises' onclick='exibirAnalises()' class='btn btn-primary btn-sm pull-right' title='Exibe/Oculta instâncias rotuladas'>
+				<span id='BotaoMostrarOcultarAnalises' class="glyphicon glyphicon-chevron-up" ></span>
+			</button>
+		</h3>
+	</div>
+	<div id="PainelAnalises"class="panel  col-md-12" > <!-- Div da tabela de parametrização-->
+		<div class="panel-body col-md-12" >
+			<button type="button" onclick="adicionarInstancia()" class="btn btn-primary pull-right" title="Adiciona instância para rotulagem">
+				<span class="glyphicon glyphicon-tag"></span> Rotular Instância
+			</button>	
+			<div class="col-md-4">
+			<h5>📋 Selecionar Tipo</h5><select id="SelecaoGE" class="form-control" onchange="selecionarGEOnClick()"><option>---</option></select>
+			</div>
+			
+			<div class="col-md-12">
+				<table id="TabelaAnalises" class="table">
+					<thead>
+						<tr>
+							<td>Id</td>
+							<td>Poço</td>
+							<td>Usuário</td>
+							<td>Registro</td>
+							<td>Início</td>
+							<td>Fim</td>
+						</tr>
+					</thead>
+				</table>						
+			</div>
+		</div>
+	</div>
+	<div id= "Painel" class="panel-heading panel-primary">		
+		<h3>Análise e Rotulagem de Instância
+		<button type='button' id='exibirParametrizacao' onclick='exibirParametrizacao()' class='btn btn-primary btn-sm pull-right' title='Exibe/Oculta análise e rotulagem de instância'>
+				<span id='BotaoMostrarOcultarTabela' class="glyphicon glyphicon-chevron-up" ></span>
+			</button>
+		</h3>
+	</div>
+	<div id="PainelParametrizacao"class="panel  col-md-12" > <!-- Div da tabela de parametrização-->
+		<div class="panel-body col-md-12" >
+			<div class="container" style="margin: 0; padding: 0; display: flex; width: 100%;">
+					<div class="panel-body col-md-12" style="width: 85%; padding-left: 0;">
+						<div class="col-md-12" style="padding-left: 0;">
+							<div class="col-md-3"><h5>🏭 Selecionar UO</h5><select id="SelecaoUO" class="form-control" onchange="selecionarUO()"><option>---</option></select></div>
+							<div class="col-md-3"><h5>⚙️ Selecionar Ativo</h5><select id="SelecaoAtivo" class="form-control" onchange="selecionarAtivo()"><option>---</option></select></div>
+							<div class="col-md-3"><h5>🏭 Selecionar UEP</h5><select id="SelecaoUEP" class="form-control" onchange="selecionarUEP()"><option>---</option></select></div>
+							<div class="col-md-3"><h5>🛢️ Selecionar Poço</h5><select id="SelecaoPoco" class="form-control" onchange="selecionarPoco()"><option>---</option></select></div>
+						</div>		
+						<div class="col-md-12" style="padding-left: 0;">
+							<div class="col-md-3"><h5>🕒 Definir Início</h5><input id='DataInicio' type="datetime-local" class="form-control" step="1" onblur=""></input></div>
+							<div class="col-md-3"><h5>⏳ Definir Fim</h5><input id='DataFim' type="datetime-local" class="form-control" step="1" onblur=""></input></div>						
+					</div>
+				</div>			
+				<div class="panel-body col-md-12" style="width: 15%; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; height: auto;">
+					<button type='button' onclick='carregarDadosVI()' id='btn_atualizar_graficos' class='btn btn-primary' style='width: 160px;' title='Atualiza gráficos com as variáveis industriais'>
+						<span class="glyphicon glyphicon-refresh"></span> Atualizar Gráficos
+					</button>			
+			
+					<button type='button' onclick="adicionarRotulo()" id='btn_add_carrinho'  class='btn btn-primary' style='width: 160px;' title='Adiciona amostra na instância'>
+						<span class="glyphicon glyphicon-plus"></span> Adicionar Amostra
+					</button>			
+					<button type='button' onclick='adicionarAmostra()' class='btn btn-primary' style='width: 160px;' title='Salva edições na instância'>
+						<span id='btn_adicionarAmostra' class="glyphicon glyphicon-floppy-disk"></span> Salvar Instância
+					</button>			
+				</div>
+			</div>
+			<div class="panel-body col-md-12">
+					<div id= "Painel" class="panel-heading">Amostras</div>
+					<table id='tabela_rotulos' class="table" cellspacing="0" width="100%">
+						<thead>
+							<th style="font-weight: normal;">Início</th>
+							<th style="font-weight: normal;">Fim</th>
+							<th style="font-weight: normal;">Rótulo de evento</th>
+							<th style="font-weight: normal;">Estado de poço</th>
+							<th style="font-weight: normal;">Ações</th>
+						</thead>
+					</table>									
+			</div>
+		</div>
+	</div>	
+</div>						
+<div class="panel panel-positive col-md-12"> <!-- Div dos trends individuais-->
+	<div id= "Painel" class="panel-heading panel-primary">
+		<h3>Gráficos com as Variáveis Industriais</h3>
+	</div>
+	<div class="panel-body" >
+		<div id="label_inicio" class "col-md-12">Início</div>
+		<div id="label_fim" class "col-md-12">Fim</div>
+	</div>
+	<div class="panel-body" >
+		<div id="div_graficos" class "col-md-12"></div>
+	</div>
+</div>
+{% endblock %}
+</html>
+

@@ -1,0 +1,1 @@
+call python "D:\gideao\servidor_dados_pi.py"

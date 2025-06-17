@@ -1,0 +1,163 @@
+﻿{% extends "base.html" %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+{% block head %}
+	{{ block.super }}
+	<style>
+		.loader {
+		  width: 60px;
+		  aspect-ratio: 1;
+		  border-radius: 50%;
+		  background: #ccc;
+		  --_m: conic-gradient(#0000 10%, #eee), linear-gradient(#eee 0 0) content-box;
+		  -webkit-mask: var(--_m);
+		  mask: var(--_m);
+		  -webkit-mask-composite: source-out;
+		  mask-composite: subtract;
+		  animation: l3 1s infinite linear;
+		}
+		@keyframes l3 {
+		  to { transform: rotate(1turn); }
+		}
+		</style> 
+<script type="text/javascript">
+var uos=JSON.parse({{uos|safe}})
+var ativos=JSON.parse({{ativos|safe}})
+var ueps=JSON.parse({{ueps|safe}})
+var pocos=JSON.parse({{pocos|safe}})
+var grandezas_industriais=JSON.parse({{grandezas_industriais|safe}})
+var grandezas_especialistas=JSON.parse({{grandezas_especialistas|safe}})
+var relacoes=JSON.parse({{relacoes|safe}})
+var ge_sel=[]
+var analises=JSON.parse({{analises|safe}})
+var analises_sel=[]
+var dados_tabela = []
+console.log('carregamento inicial das analises: ', analises)
+for (i in analises){
+	var aux=[]
+	aux.numero=analises[i].pk
+	aux.grandeza=analises[i].fields.grandeza_especialista
+	aux.poco = analises[i].fields.poco
+	aux.usuario = analises[i].fields.usuario
+	aux.registro = analises[i].fields.data_registro
+	aux.inicio = analises[i].fields.data_inicio
+	aux.fim = analises[i].fields.data_fim
+	aux.habilitacao = analises[i].fields.exportacao_habilitada
+	aux.exportacao = analises[i].fields.status_exportacao
+	dados_tabela.push(aux)
+}
+$(document).ready(function() {
+    $('#TabelaAnalises').DataTable( {
+	responsive: true,
+        data: dados_tabela,
+        columns: [
+			{ "data":"numero",title:"Id da Instância"},
+			{ "data":"grandeza",title:"Tipo da Instância"},
+			{ "data":"poco",title:"Id do Poço"},
+			{ "data":"usuario",title:"Id do Rotulador"},
+			{ "data":"registro",title:"Registro da Instância"},
+			{ "data":"inicio",title:"Início da Instância"},
+			{ "data":"fim",title:"Fim da Instância"},
+			{ "data":"habilitacao",title:"Exportação Habilitada?"},
+			{ "data":"exportacao",title:"Status da Exportação"},
+        ],
+	"fnRowCallback": function(nRow, aData, iDisplayIndex, iDisplayIndexFull){
+	console.log(aData.exportacao)
+	if (aData.exportacao=='Pendente'){
+		$('td', nRow).css('background-color','#f2dede')
+	} else if(aData.exportacao=='Exportando'){
+		$('td', nRow).css('background-color','#efd586')
+	} else if (aData.exportacao=='Exportado'){
+		$('td', nRow).css('background-color','#8eb285')
+	} else {
+		$('td', nRow).css('background-color','#DAEEF3')
+	}
+	},
+    } );
+} );
+
+function substituirClasse() { // Inicializa a página e configura os elementos de seleção
+	inicializarElementos() // from base.html
+	configurarGEs()
+}
+window.onload = substituirClasse;
+function configurarGEs(){ // Carrega e exibe as grandezas especialistas no seletor
+	var html=''
+	$('#SelecaoGE').html(html)
+	for (i in grandezas_especialistas) {
+		html=html+'<option value='+String(grandezas_especialistas[i].pk)+'>'+grandezas_especialistas[i].fields.nome+'</option>'
+	}
+	$('#SelecaoGE').html(html)
+}
+function selecionarGE(){ // Seleciona uma grandeza especialista e carrega dados
+	carregarInstancia()	
+}
+function carregarInstancias(){ // Obtém as instâncias existentes para a grandeza especialista
+	console.log('atualizando analises')
+	entrada={'csrfmiddlewaretoken': '{{ csrf_token }}',}
+	$.ajax({
+		type:"POST",
+		datatype: 'json',
+		url:"/ajax/carregar_instancias", // Carrega todas as instâncias disponíveis no sistema via AJAX
+		data: entrada,
+		success: function(saida){
+			if (saida.saida==true){
+				analises = JSON.parse(saida.analises)
+				atualizarListaInstancias()
+				toastr.success('Lista de análises para grandeza especialista carregadas com sucesso')
+			}else{		
+				analises=[]
+				toastr.error('Erro ao lista análises dessa grandeza especialista, contacte um administrador.')
+			}
+		}
+	})
+}
+function atualizarListaInstancias(){ // Atualiza a tabela de instâncias na interface
+	console.log('atualizando tabela de analises com novos dados')
+	dados_tabela=[]
+	for (i in analises){
+		var aux=[]
+		aux.numero=analises[i].pk
+		aux.grandeza=analises[i].fields.grandeza_especialista
+		aux.poco = analises[i].fields.poco
+		aux.usuario = analises[i].fields.usuario
+		aux.registro = analises[i].fields.data_registro
+		aux.inicio = analises[i].fields.data_inicio
+		aux.fim = analises[i].fields.data_fim
+		aux.habilitacao = analises[i].fields.exportacao_habilitada
+		aux.exportacao = analises[i].fields.status_exportacao
+		dados_tabela.push(aux)
+	}
+	var datatable=$('#TabelaAnalises').DataTable();
+	datatable.rows().remove().draw();
+	datatable.rows.add(dados_tabela);
+	datatable.draw();
+}
+setInterval(function atualizarInstancias(a){ // Recarrega a lista de análises periodicamente a cada intervalo definido.
+	carregarInstancia()
+},10000000000);
+</script>
+
+<!-- POPUPS DE AVISOS -->
+
+<div class="modal" id="myModal" tabindex="-1" style="display:none;" data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog" style="display: flex; justify-content: center; align-items: center; height: 100%;">
+	  <div class="loader"></div>
+	</div>
+</div>
+<div class="panel panel-positive col-md-12" > 
+	<div id="PainelAnalises"class="panel  col-md-12" > <!-- Div da tabela de parametrização-->
+		<div class="panel-body col-md-12" >
+			<div class="col-md-12">
+			<table id="TabelaAnalises" class="table dataTable">
+				<thead><th>Id da Instância</th><th>Tipo da Instância</th><th>Id do Poço</th><th>Id do Rotulador</th><th>Registro da Instância</th><th>Início da Instância</th><th>Fim da Instância</th><th>Exportação Habilitada?</th><th>Status da Exportação</th></thead>
+			</table>
+			</div>
+		</div>
+	</div>
+</div>					
+
+{% endblock %}
+</html>
+

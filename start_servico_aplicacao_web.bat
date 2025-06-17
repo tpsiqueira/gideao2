@@ -1,0 +1,1 @@
+call python "D:\gideao\gideao_project\manage.py" runserver 10.28.201.123:8989
