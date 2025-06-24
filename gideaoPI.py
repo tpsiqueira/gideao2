@@ -61,35 +61,35 @@ REGRA_GERAL_ESTADOS_FECHADOS = {
 }
 
 # Regras específicas para conversões do estado específico "normal" utilizado nos
-# digitalsets NO_FE e NO_AB exclusivamente na UN-ES
+# digitalsets NO_FE e NO_AB exclusivamente na UO-ES
 # Se o nome da tag tiver a substring ZSL, ela usa o digitalset NO_FE:
 #   fechado -> 0
 #   normal -> 1.0 (semiaberto ou aberto, mas escolhemos indicar aberto)
 # Se o nome da tag tiver a substring ZSH ou a substring ZAH, ela usa o digitalset NO_AB:
 #   aberto -> 1.0
 #   normal -> 0 (semiaberto ou fechado, mas escolhemos indicar fechado)
-REGRA_UN_ES_NO_FE_ESTADOS_ABERTOS = {"normal"}
-REGRA_UN_ES_NO_FE_ESTADOS_SEMIABERTOS = {}
-REGRA_UN_ES_NO_FE_ESTADOS_FECHADOS = {"fechado"}
-REGRA_UN_ES_NO_AB_ESTADOS_ABERTOS = {"aberto"}
-REGRA_UN_ES_NO_AB_ESTADOS_SEMIABERTOS = {}
-REGRA_UN_ES_NO_AB_ESTADOS_FECHADOS = {"normal"}
+REGRA_UO_ES_NO_FE_ESTADOS_ABERTOS = {"normal"}
+REGRA_UO_ES_NO_FE_ESTADOS_SEMIABERTOS = {}
+REGRA_UO_ES_NO_FE_ESTADOS_FECHADOS = {"fechado"}
+REGRA_UO_ES_NO_AB_ESTADOS_ABERTOS = {"aberto"}
+REGRA_UO_ES_NO_AB_ESTADOS_SEMIABERTOS = {}
+REGRA_UO_ES_NO_AB_ESTADOS_FECHADOS = {"normal"}
 
 # Estados em dois dicionários para simplificar consultas
 ESTADOS_ABERTOS = {
     "GERAL": REGRA_GERAL_ESTADOS_ABERTOS,
-    "UN_ES_NO_FE": REGRA_UN_ES_NO_FE_ESTADOS_ABERTOS,
-    "UN_ES_NO_AB": REGRA_UN_ES_NO_AB_ESTADOS_ABERTOS,
+    "UO_ES_NO_FE": REGRA_UO_ES_NO_FE_ESTADOS_ABERTOS,
+    "UO_ES_NO_AB": REGRA_UO_ES_NO_AB_ESTADOS_ABERTOS,
 }
 ESTADOS_SEMIABERTOS = {
     "GERAL": REGRA_GERAL_ESTADOS_SEMIABERTOS,
-    "UN_ES_NO_FE": REGRA_UN_ES_NO_FE_ESTADOS_SEMIABERTOS,
-    "UN_ES_NO_AB": REGRA_UN_ES_NO_AB_ESTADOS_SEMIABERTOS,
+    "UO_ES_NO_FE": REGRA_UO_ES_NO_FE_ESTADOS_SEMIABERTOS,
+    "UO_ES_NO_AB": REGRA_UO_ES_NO_AB_ESTADOS_SEMIABERTOS,
 }
 ESTADOS_FECHADOS = {
     "GERAL": REGRA_GERAL_ESTADOS_FECHADOS,
-    "UN_ES_NO_FE": REGRA_UN_ES_NO_FE_ESTADOS_FECHADOS,
-    "UN_ES_NO_AB": REGRA_UN_ES_NO_AB_ESTADOS_FECHADOS,
+    "UO_ES_NO_FE": REGRA_UO_ES_NO_FE_ESTADOS_FECHADOS,
+    "UO_ES_NO_AB": REGRA_UO_ES_NO_AB_ESTADOS_FECHADOS,
 }
 
 
@@ -235,9 +235,9 @@ def identificaRegraCodifEstadosDiscretos(tipo, servidorOUdb, tagOUAttr):
         nome_tag = tagOUAttr.upper()
         if tipo == "PI" and nome_servidor == "SESAUPI01":
             if "ZSL" in nome_tag:
-                return "UN_ES_NO_FE"
+                return "UO_ES_NO_FE"
             if "ZSH" in nome_tag or "ZAH" in nome_tag:
-                return "UN_ES_NO_AB"
+                return "UO_ES_NO_AB"
         return "GERAL"        
     except:
         return "GERAL"

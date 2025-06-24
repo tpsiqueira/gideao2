@@ -46,15 +46,15 @@ if __name__ == "__main__":
     try:
         global servidores
         servidores = {
-            # UN-BC
+            # UO-BC
             "SBCPI01": gp.getServidor("SBCPI01", "PI"),
             "SBCPI02": gp.getAFDataBase("UO-BC", gp.getServidor("SBCPIAF01", "AF")),
-            # UN-BS
+            # UO-BS
             "SBS00AS25": gp.getServidor("SBS00AS25", "PI"),
             "SBS00AS30": gp.getAFDataBase(
                 "Elevação e Escoamento", gp.getServidor("SBS00AS30", "AF")
             ),
-            # UN-ES
+            # UO-ES
             "SESAUPI01": gp.getServidor("SESAUPI01", "PI"),
             "SESAUAF01": gp.getAFDataBase("UO-ES", gp.getServidor("SESAUAF01", "AF")),
             # Ambiente integrado
